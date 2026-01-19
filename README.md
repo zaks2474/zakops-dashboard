@@ -1,201 +1,182 @@
 # ZakOps Dashboard
 
-World-class deal lifecycle management dashboard built with Next.js 15, shadcn/ui, and Tailwind CSS.
+The frontend application for ZakOps Deal Lifecycle OS.
+
+## Tech Stack
+
+- **Framework**: Next.js 15 (App Router)
+- **UI Library**: Radix UI + shadcn/ui
+- **Styling**: Tailwind CSS
+- **State**: React hooks + SSE streaming
+- **Language**: TypeScript
 
 ## Features
 
-- **Dashboard**: Pipeline funnel with stage filters, deal table, action rail, quarantine inbox, alerts
-- **Deals List**: Sortable/filterable table with search, stage and status filters
-- **Deal Workspace**: Case file viewer, event history, stage transitions, pending actions
-- **Actions**: Due/overdue/today/week/upcoming categorization with tabs
-- **Quarantine**: Resolution flow (link to deal, create new, discard)
+- 📊 **Dashboard** — Real-time Agent Activity Widget, Pipeline Funnel, Deal Inbox
+- 🤖 **Agent Visibility** — Drawer, panels, status indicators, run timeline
+- 📁 **Deal Workspace** — Stage tracking, case files, documents, actions
+- ✅ **Actions** — Approval workflows, due/overdue categorization
+- 📥 **Quarantine** — Email triage with resolution flow
+- 🚀 **Onboarding** — 5-step wizard with agent demo
+- ⌨️ **Command Palette** — Cmd+K for quick navigation
+- 💬 **Chat** — AI assistant with RAG and action proposals
+
+## Architecture
+
+This dashboard is the **UI Layer** in the Four-Plane Architecture:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     UI LAYER ← This Repo                         │
+│                   (Next.js Dashboard)                            │
+│         Dashboard • Deal Workspace • Agent Visibility            │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      EXECUTION PLANE                             │
+│                    (zakops-backend)                              │
+│      Deal Lifecycle API • MCP Agent Bridge • Workers             │
+└─────────────────────────────────────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        DATA PLANE                                │
+│              (PostgreSQL + Filesystem + Vector)                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Related Repositories
+
+| Repository | Purpose |
+|------------|---------|
+| [zakops-backend](../zakops-backend) | Python backend services (FastAPI, MCP, Workers) |
+| [Zaks-llm](../Zaks-llm) | LangGraph agent development |
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ (tested with 20.x)
+- npm 10+
+- Backend API running (see [zakops-backend](../zakops-backend))
+
+### Quick Start
+
+```bash
+# Install dependencies
+npm install
+
+# Copy environment file
+cp env.example.txt .env.local
+
+# Start development server
+npm run dev
+```
+
+Open [http://localhost:3003](http://localhost:3003)
+
+### Environment Variables
+
+Create `.env.local`:
+
+```bash
+# Backend API URL
+API_URL=http://localhost:8090
+
+# Feature Flags
+NEXT_PUBLIC_ENABLE_AGENT_DEMO=true
+NEXT_PUBLIC_ENABLE_ONBOARDING=true
+```
+
+## Project Structure
+
+```
+src/
+├── app/                    # Next.js App Router
+│   ├── dashboard/          # Main dashboard
+│   ├── deals/              # Deal workspace
+│   │   └── [id]/           # Deal detail page
+│   ├── actions/            # Action management
+│   ├── agent/              # Agent activity page
+│   ├── onboarding/         # Onboarding wizard
+│   ├── quarantine/         # Email quarantine
+│   └── api/                # Next.js API routes
+├── components/
+│   ├── agent/              # Agent drawer, panel, timeline
+│   ├── dashboard/          # Activity widget, inbox
+│   ├── deal-workspace/     # Deal components
+│   ├── layout/             # Sidebar, header
+│   ├── onboarding/         # Wizard steps
+│   └── ui/                 # Radix UI primitives
+├── hooks/                  # Custom React hooks
+├── lib/                    # Utilities and API client
+└── types/                  # TypeScript definitions
+```
 
 ## API Integration
 
-The dashboard uses **Next.js rewrites** to proxy all `/api/*` requests to the backend API server.
-This ensures consistent behavior between development and production.
+The dashboard uses **Next.js rewrites** to proxy `/api/*` requests to the backend.
 
-### Configuration
-
-Set the `API_URL` environment variable to point to your backend API:
-
-```bash
-# Default: http://localhost:8090
-API_URL=http://localhost:8090
-```
-
-### API Endpoints Used
+### Key Endpoints
 
 | Endpoint | Description |
 |----------|-------------|
 | `/api/deals` | List deals (with filters) |
 | `/api/deals/:id` | Get deal details |
 | `/api/deals/:id/events` | Get deal events |
-| `/api/deals/:id/case-file` | Get case file projection |
-| `/api/deals/:id/transition` | Transition deal stage |
-| `/api/deals/:id/note` | Add note to deal |
-| `/api/deferred-actions` | List all actions |
-| `/api/deferred-actions/due` | List due actions |
-| `/api/quarantine` | List quarantine items |
-| `/api/quarantine/health` | Get quarantine health |
-| `/api/quarantine/:id/resolve` | Resolve quarantine item |
-| `/api/alerts` | Get alerts |
-| `/api/metrics/classification` | Get classification metrics |
-| `/api/checkpoints` | Get active checkpoints |
+| `/api/deals/:id/case-file` | Get case file |
+| `/api/actions` | List actions |
+| `/api/actions/quarantine` | List quarantine items |
+| `/api/chat/complete` | Chat with SSE streaming |
 
-## Development
+### API Client
 
-### Prerequisites
+All API calls go through `src/lib/api.ts` with:
 
-- Node.js 18+ (tested with 20.x)
-- npm 10+
-- Backend API running on port 8090
-
-### Quick Start
-
-```bash
-cd /home/zaks/zakops-dashboard
-
-# Using Makefile (recommended)
-make install    # Install dependencies
-make dev        # Start dev server on port 3003
-make test       # Run smoke tests (in another terminal)
-
-# Or manually
-npm install
-npx next dev --port 3003
-```
-
-Then open http://localhost:3003
-
-### Available Make Commands
-
-| Command | Description |
-|---------|-------------|
-| `make install` | Install dependencies |
-| `make dev` | Start development server (port 3003) |
-| `make build` | Build for production |
-| `make start` | Start production server |
-| `make test` | Run smoke tests |
-| `make lint` | Run linter |
-| `make health` | Quick health check |
-| `make clean` | Clean build artifacts |
-
-### Environment Variables
-
-Create a `.env.local` file (optional):
-
-```bash
-# Backend API URL (default: http://localhost:8090)
-API_URL=http://localhost:8090
-```
-
-## Production
-
-### Build
-
-```bash
-npm run build
-```
-
-### Start
-
-```bash
-npm run start
-```
-
-The production server runs on port 3001 by default.
-
-### Deployment Options
-
-1. **Same server as API**: Run Next.js on port 3001, API on port 8090
-2. **Reverse proxy**: Use nginx to serve both on standard ports
-3. **Docker**: Build a container with the Next.js app
-
-## Project Structure
-
-```
-src/
-├── app/
-│   ├── dashboard/page.tsx    # Main dashboard
-│   ├── deals/
-│   │   ├── page.tsx          # Deals list
-│   │   └── [id]/page.tsx     # Deal workspace
-│   ├── actions/page.tsx      # Actions page
-│   └── quarantine/page.tsx   # Quarantine inbox
-├── components/
-│   ├── layout/               # Sidebar, header, navigation
-│   └── ui/                   # shadcn/ui components
-├── config/
-│   └── nav-config.ts         # Navigation configuration
-└── lib/
-    └── api.ts                # Centralized API client with Zod validation
-```
-
-## API Client
-
-All API calls go through `src/lib/api.ts` which provides:
-
-- **Zod validation**: Response shapes are validated and normalized
-- **Error handling**: Consistent `ApiError` class with status codes
-- **Array normalization**: Responses are always normalized to arrays where expected
-  (prevents "filter is not a function" errors)
-
-### Example Usage
+- **Zod validation** — Response shapes validated and normalized
+- **Error handling** — Consistent `ApiError` class
+- **Array normalization** — Prevents "filter is not a function" errors
 
 ```typescript
 import { getDeals, getDeal, getActions } from '@/lib/api';
 
-// Always returns Deal[] (never undefined)
-const deals = await getDeals({ status: 'active' });
-
-// Returns DealDetail | null
-const deal = await getDeal('DEAL-2025-001');
-
-// Always returns Action[] (never undefined)
-const actions = await getActions({ deal_id: 'DEAL-2025-001' });
+const deals = await getDeals({ status: 'active' });  // Always Deal[]
+const deal = await getDeal('DEAL-2025-001');         // DealDetail | null
+const actions = await getActions({ deal_id });       // Always Action[]
 ```
 
-## Testing
+## Development
 
-### Smoke Test
+### Make Commands
 
-Run the smoke test to verify all pages and API endpoints work:
+| Command | Description |
+|---------|-------------|
+| `make install` | Install dependencies |
+| `make dev` | Start dev server (port 3003) |
+| `make build` | Build for production |
+| `make test` | Run smoke tests |
+| `make lint` | Run linter |
+
+### Testing
 
 ```bash
-# Start the dev server first
-npx next dev --port 3003
+# Start dev server
+npm run dev
 
-# In another terminal, run the smoke test
+# In another terminal, run smoke test
 ./smoke-test.sh
 ```
 
-The smoke test checks:
-- All page routes return HTTP 200
-- All API proxy endpoints work
-- Filtered routes work correctly
+## Production
 
-### Manual Smoke Test Checklist
+```bash
+# Build
+npm run build
 
-1. Load `/dashboard` → Pipeline counts render, no console errors
-2. Click "View all" in Deals section → `/deals` loads
-3. Use stage filter dropdown → No crash, filtering works
-4. Click a deal row → `/deals/[id]` loads with Overview/Events tabs
-5. Click "View all" in Quarantine → `/quarantine` loads
-6. No red runtime error overlays anywhere
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Zod validation errors** - The API client handles string-to-number coercion automatically.
-   Numeric fields like `asking_price` can be strings like "TBD" and will convert to `null`.
-
-2. **Select component errors** - All Select components use non-empty sentinel values internally.
-   Filter values are converted correctly when updating URLs.
-
-3. **Deal not found** - Check the API is running on port 8090. The deal ID in the URL
-   must match `deal_id` from the API response.
+# Start (port 3001)
+npm run start
+```
 
 ## Credits
 
