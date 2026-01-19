@@ -13,6 +13,14 @@ export const navItems: NavItem[] = [
     items: []
   },
   {
+    title: 'Operator HQ',
+    url: '/hq',
+    icon: 'hq',
+    isActive: false,
+    shortcut: ['g', 'h'],
+    items: []
+  },
+  {
     title: 'Deals',
     url: '/deals',
     icon: 'product',
@@ -34,6 +42,30 @@ export const navItems: NavItem[] = [
     icon: 'warning',
     shortcut: ['g', 'q'],
     isActive: false,
+    items: []
+  },
+  {
+    title: 'Chat',
+    url: '/chat',
+    icon: 'chat',
+    shortcut: ['g', 'c'],
+    isActive: false,
+    items: []
+  },
+  {
+    title: 'Agent Activity',
+    url: '/agent/activity',
+    icon: 'agent',
+    shortcut: ['g', 'g'],
+    isActive: false,
+    items: []
+  },
+  {
+    title: 'Onboarding',
+    url: '/onboarding',
+    icon: 'onboarding',
+    isActive: false,
+    shortcut: ['g', 'o'],
     items: []
   }
 ];

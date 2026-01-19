@@ -3,10 +3,6 @@
 import { IconX, IconUpload } from '@tabler/icons-react';
 import Image from 'next/image';
 import * as React from 'react';
-import Dropzone, {
-  type DropzoneProps,
-  type FileRejection
-} from 'react-dropzone';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -58,7 +54,7 @@ export interface FileUploaderProps
    * ```
    * @example accept={["image/png", "image/jpeg"]}
    */
-  accept?: DropzoneProps['accept'];
+  accept?: Record<string, string[]> | string[] | string;
 
   /**
    * Maximum file size for the uploader.
@@ -66,7 +62,7 @@ export interface FileUploaderProps
    * @default 1024 * 1024 * 2 // 2MB
    * @example maxSize={1024 * 1024 * 2} // 2MB
    */
-  maxSize?: DropzoneProps['maxSize'];
+  maxSize?: number;
 
   /**
    * Maximum number of files for the uploader.
@@ -74,7 +70,7 @@ export interface FileUploaderProps
    * @default 1
    * @example maxFiles={5}
    */
-  maxFiles?: DropzoneProps['maxFiles'];
+  maxFiles?: number;
 
   /**
    * Whether the uploader should accept multiple files.
@@ -93,6 +89,11 @@ export interface FileUploaderProps
   disabled?: boolean;
 }
 
+type FileRejection = {
+  file: File;
+  reason: string;
+};
+
 export function FileUploader(props: FileUploaderProps) {
   const {
     value: valueProp,
@@ -105,13 +106,49 @@ export function FileUploader(props: FileUploaderProps) {
     multiple = false,
     disabled = false,
     className,
-    ...dropzoneProps
+    ...rootProps
   } = props;
 
   const [files, setFiles] = useControllableState({
     prop: valueProp,
     onChange: onValueChange
   });
+
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const [isDragActive, setIsDragActive] = React.useState(false);
+
+  const acceptAttr = React.useMemo(() => {
+    if (!accept) return undefined;
+    if (Array.isArray(accept)) return accept.join(',');
+    if (typeof accept === 'string') return accept;
+    if (typeof accept === 'object') return Object.keys(accept).join(',');
+    return undefined;
+  }, [accept]);
+
+  const isAccepted = React.useCallback(
+    (file: File) => {
+      if (!accept) return true;
+      const patterns = Array.isArray(accept)
+        ? accept
+        : typeof accept === 'string'
+          ? [accept]
+          : Object.keys(accept);
+
+      if (patterns.length === 0) return true;
+      const name = (file.name || '').toLowerCase();
+      const mime = (file.type || '').toLowerCase();
+
+      return patterns.some((p) => {
+        const pat = (p || '').toLowerCase().trim();
+        if (!pat) return false;
+        if (pat.startsWith('.')) return name.endsWith(pat);
+        if (pat.endsWith('/*')) return mime.startsWith(pat.slice(0, -1));
+        if (mime) return mime === pat;
+        return false;
+      });
+    },
+    [accept]
+  );
 
   const onDrop = React.useCallback(
     (acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
@@ -136,8 +173,8 @@ export function FileUploader(props: FileUploaderProps) {
       setFiles(updatedFiles);
 
       if (rejectedFiles.length > 0) {
-        rejectedFiles.forEach(({ file }) => {
-          toast.error(`File ${file.name} was rejected`);
+        rejectedFiles.forEach(({ file, reason }) => {
+          toast.error(`File ${file.name} was rejected${reason ? `: ${reason}` : ''}`);
         });
       }
 
@@ -161,6 +198,28 @@ export function FileUploader(props: FileUploaderProps) {
     },
 
     [files, maxFiles, multiple, onUpload, setFiles]
+  );
+
+  const handleFiles = React.useCallback(
+    (incoming: File[]) => {
+      const accepted: File[] = [];
+      const rejected: FileRejection[] = [];
+
+      for (const file of incoming) {
+        if (maxSize && file.size > maxSize) {
+          rejected.push({ file, reason: `exceeds max size (${formatBytes(maxSize)})` });
+          continue;
+        }
+        if (!isAccepted(file)) {
+          rejected.push({ file, reason: 'type not accepted' });
+          continue;
+        }
+        accepted.push(file);
+      }
+
+      onDrop(accepted, rejected);
+    },
+    [isAccepted, maxSize, onDrop]
   );
 
   function onRemove(index: number) {
@@ -187,64 +246,91 @@ export function FileUploader(props: FileUploaderProps) {
 
   return (
     <div className='relative flex flex-col gap-6 overflow-hidden'>
-      <Dropzone
-        onDrop={onDrop}
-        accept={accept}
-        maxSize={maxSize}
-        maxFiles={maxFiles}
-        multiple={maxFiles > 1 || multiple}
-        disabled={isDisabled}
+      <div
+        role='button'
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (isDisabled) return;
+          if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click();
+        }}
+        onClick={() => {
+          if (isDisabled) return;
+          inputRef.current?.click();
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (isDisabled) return;
+          setIsDragActive(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (isDisabled) return;
+          setIsDragActive(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragActive(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragActive(false);
+          if (isDisabled) return;
+          const dropped = Array.from(e.dataTransfer.files || []);
+          if (dropped.length > 0) handleFiles(dropped);
+        }}
+        className={cn(
+          'group border-muted-foreground/25 hover:bg-muted/25 relative grid h-52 w-full cursor-pointer place-items-center rounded-lg border-2 border-dashed px-5 py-2.5 text-center transition',
+          'ring-offset-background focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden',
+          isDragActive && 'border-muted-foreground/50',
+          isDisabled && 'pointer-events-none opacity-60',
+          className
+        )}
+        {...rootProps}
       >
-        {({ getRootProps, getInputProps, isDragActive }) => (
-          <div
-            {...getRootProps()}
-            className={cn(
-              'group border-muted-foreground/25 hover:bg-muted/25 relative grid h-52 w-full cursor-pointer place-items-center rounded-lg border-2 border-dashed px-5 py-2.5 text-center transition',
-              'ring-offset-background focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden',
-              isDragActive && 'border-muted-foreground/50',
-              isDisabled && 'pointer-events-none opacity-60',
-              className
-            )}
-            {...dropzoneProps}
-          >
-            <input {...getInputProps()} />
-            {isDragActive ? (
-              <div className='flex flex-col items-center justify-center gap-4 sm:px-5'>
-                <div className='rounded-full border border-dashed p-3'>
-                  <IconUpload
-                    className='text-muted-foreground size-7'
-                    aria-hidden='true'
-                  />
-                </div>
-                <p className='text-muted-foreground font-medium'>
-                  Drop the files here
-                </p>
-              </div>
-            ) : (
-              <div className='flex flex-col items-center justify-center gap-4 sm:px-5'>
-                <div className='rounded-full border border-dashed p-3'>
-                  <IconUpload
-                    className='text-muted-foreground size-7'
-                    aria-hidden='true'
-                  />
-                </div>
-                <div className='space-y-px'>
-                  <p className='text-muted-foreground font-medium'>
-                    Drag {`'n'`} drop files here, or click to select files
-                  </p>
-                  <p className='text-muted-foreground/70 text-sm'>
-                    You can upload
-                    {maxFiles > 1
-                      ? ` ${maxFiles === Infinity ? 'multiple' : maxFiles}
-                      files (up to ${formatBytes(maxSize)} each)`
-                      : ` a file with ${formatBytes(maxSize)}`}
-                  </p>
-                </div>
-              </div>
-            )}
+        <input
+          ref={inputRef}
+          type='file'
+          className='hidden'
+          accept={acceptAttr}
+          multiple={maxFiles > 1 || multiple}
+          disabled={isDisabled}
+          onChange={(e) => {
+            const picked = Array.from(e.target.files || []);
+            e.target.value = '';
+            if (picked.length > 0) handleFiles(picked);
+          }}
+        />
+        {isDragActive ? (
+          <div className='flex flex-col items-center justify-center gap-4 sm:px-5'>
+            <div className='rounded-full border border-dashed p-3'>
+              <IconUpload className='text-muted-foreground size-7' aria-hidden='true' />
+            </div>
+            <p className='text-muted-foreground font-medium'>Drop the files here</p>
+          </div>
+        ) : (
+          <div className='flex flex-col items-center justify-center gap-4 sm:px-5'>
+            <div className='rounded-full border border-dashed p-3'>
+              <IconUpload className='text-muted-foreground size-7' aria-hidden='true' />
+            </div>
+            <div className='space-y-px'>
+              <p className='text-muted-foreground font-medium'>
+                Drag {`'n'`} drop files here, or click to select files
+              </p>
+              <p className='text-muted-foreground/70 text-sm'>
+                You can upload
+                {maxFiles > 1
+                  ? ` ${maxFiles === Infinity ? 'multiple' : maxFiles}
+                  files (up to ${formatBytes(maxSize)} each)`
+                  : ` a file with ${formatBytes(maxSize)}`}
+              </p>
+            </div>
           </div>
         )}
-      </Dropzone>
+      </div>
       {files?.length ? (
         <ScrollArea className='h-fit w-full px-3'>
           <div className='max-h-48 space-y-4'>

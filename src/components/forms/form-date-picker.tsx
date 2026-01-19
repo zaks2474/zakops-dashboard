@@ -83,7 +83,7 @@ function FormDatePicker<
                 mode='single'
                 selected={field.value}
                 onSelect={field.onChange}
-                disabled={(date) => {
+                disabled={(date: Date) => {
                   if (minDate && date < minDate) return true;
                   if (maxDate && date > maxDate) return true;
                   return disabledDates.some(

@@ -11,11 +11,10 @@ import {
   IconAlertTriangle,
   IconArrowRight,
   IconBox,
-  IconCalendarEvent,
   IconChartBar,
-  IconClock,
   IconRefresh
 } from '@tabler/icons-react';
+import { toast } from 'sonner';
 import {
   getDeals,
   getDueActions,
@@ -28,6 +27,12 @@ import {
   type QuarantineHealth,
   type Alert
 } from '@/lib/api';
+
+// Phase 4 Components
+import { TodayNextUpStrip } from '@/components/dashboard/TodayNextUpStrip';
+import { ExecutionInbox } from '@/components/dashboard/ExecutionInbox';
+import { ApprovalQueue } from '@/components/approvals/ApprovalQueue';
+import { AgentActivityWidget } from '@/components/dashboard/AgentActivityWidget';
 
 // Stage order for pipeline funnel
 const STAGE_ORDER = [
@@ -63,11 +68,18 @@ export default function DashboardPage() {
   const [quarantineItems, setQuarantineItems] = useState<QuarantineItem[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
+  const [showApprovalQueue, setShowApprovalQueue] = useState(false);
 
-  const fetchData = async () => {
-    setLoading(true);
+  // Initial data fetch (shows loading skeleton)
+  const fetchData = async (isInitial = false) => {
+    if (isInitial) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
     setError(null);
     try {
       const [dealsData, actionsData, healthData, itemsData, alertsData] = await Promise.all([
@@ -82,17 +94,33 @@ export default function DashboardPage() {
       setQuarantineHealth(healthData);
       setQuarantineItems(itemsData);
       setAlerts(alertsData);
+
+      // Show success toast only on manual refresh (not initial load)
+      if (!isInitial) {
+        toast.success('Dashboard refreshed', {
+          description: 'All data has been updated',
+          duration: 2000,
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
+      // Show error toast only on manual refresh
+      if (!isInitial) {
+        toast.error('Refresh failed', {
+          description: 'Please try again',
+          duration: 3000,
+        });
+      }
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-    // Auto-refresh every 60 seconds
-    const interval = setInterval(fetchData, 60000);
+    fetchData(true); // Initial load shows skeleton
+    // Background refresh every 60 seconds (doesn't show skeleton)
+    const interval = setInterval(() => fetchData(false), 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -107,13 +135,18 @@ export default function DashboardPage() {
     ? deals.filter(d => d.stage === selectedStage)
     : deals;
 
+  // Get pending approvals and scheduled actions for TodayNextUpStrip
+  const pendingApprovals = dueActions.filter(a => a.status === 'PENDING_APPROVAL');
+  const scheduledActions = dueActions.filter(a => a.status === 'QUEUED' || a.status === 'READY');
+  const urgentDeals = deals.filter(d => d.priority === 'HIGHEST' || (d.days_since_update && d.days_since_update > 7));
+
   if (error) {
     return (
-      <div className='flex flex-1 flex-col items-center justify-center gap-4 p-8'>
+      <div className='flex flex-1 flex-col min-h-0 items-center justify-center gap-4 p-8'>
         <IconAlertTriangle className='h-12 w-12 text-destructive' />
         <h2 className='text-xl font-semibold'>Failed to load dashboard</h2>
         <p className='text-muted-foreground'>{error}</p>
-        <Button onClick={fetchData} variant='outline'>
+        <Button onClick={() => fetchData(true)} variant='outline'>
           <IconRefresh className='mr-2 h-4 w-4' />
           Retry
         </Button>
@@ -122,18 +155,52 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className='flex flex-1 flex-col gap-4 p-4 md:p-6'>
+    <div className='flex flex-1 flex-col min-h-0 overflow-y-auto gap-4 p-4 md:p-6' data-testid='dashboard-scroll'>
       {/* Header */}
-      <div className='flex items-center justify-between'>
+      <div className='flex items-center justify-between shrink-0'>
         <div>
           <h1 className='text-2xl font-bold tracking-tight'>Dashboard</h1>
           <p className='text-muted-foreground'>Deal pipeline overview and activity</p>
         </div>
-        <Button onClick={fetchData} variant='outline' size='sm' disabled={loading}>
-          <IconRefresh className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className='flex items-center gap-2'>
+          <Button
+            variant='outline'
+            size='sm'
+            onClick={() => setShowApprovalQueue(!showApprovalQueue)}
+            className={pendingApprovals.length > 0 ? 'border-amber-500' : ''}
+          >
+            Approvals
+            {pendingApprovals.length > 0 && (
+              <Badge variant='default' className='ml-2 bg-amber-500'>
+                {pendingApprovals.length}
+              </Badge>
+            )}
+          </Button>
+          <Button onClick={() => fetchData(false)} variant='outline' size='sm' disabled={loading || isRefreshing}>
+            <IconRefresh className={`mr-2 h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
+
+      {/* TODAY & NEXT UP STRIP - Phase 4 Component */}
+      {!loading && (
+        <TodayNextUpStrip
+          pendingApprovals={pendingApprovals as any}
+          scheduledActions={scheduledActions as any}
+          urgentDeals={urgentDeals as any}
+          quarantineItems={quarantineItems as any}
+          className='shrink-0'
+        />
+      )}
+
+      {/* Approval Queue Panel - Collapsible */}
+      {showApprovalQueue && (
+        <ApprovalQueue
+          className='shrink-0'
+          maxHeight='300px'
+        />
+      )}
 
       {/* Main Grid */}
       <div className='grid gap-4 md:grid-cols-3'>
@@ -277,55 +344,21 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        {/* Right Column - Action Rail */}
+        {/* Right Column - EXECUTION INBOX (Phase 4) */}
         <div className='space-y-4'>
-          {/* Due Actions */}
-          <Card>
-            <CardHeader className='pb-3'>
-              <div className='flex items-center justify-between'>
-                <CardTitle className='flex items-center gap-2 text-base'>
-                  <IconClock className='h-5 w-5' />
-                  Due Actions
-                </CardTitle>
-                <Link href='/actions'>
-                  <Button variant='ghost' size='sm'>
-                    View all
-                  </Button>
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className='space-y-2'>
-                  {[...Array(3)].map((_, i) => (
-                    <Skeleton key={i} className='h-12 w-full' />
-                  ))}
-                </div>
-              ) : dueActions.length === 0 ? (
-                <div className='text-center py-4 text-muted-foreground'>
-                  <IconCalendarEvent className='h-8 w-8 mx-auto mb-2 opacity-50' />
-                  <p className='text-sm'>No actions due</p>
-                </div>
-              ) : (
-                <ScrollArea className='h-[200px]'>
-                  <div className='space-y-2'>
-                    {dueActions.slice(0, 5).map((action) => (
-                      <Link key={action.action_id} href={`/deals/${action.deal_id}`}>
-                        <div className='rounded-lg border p-2 hover:bg-accent transition-colors cursor-pointer'>
-                          <p className='text-sm font-medium'>{action.action_type}</p>
-                          <p className='text-xs text-muted-foreground truncate'>
-                            {action.deal_id}
-                          </p>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
+          {/* Agent Activity Widget */}
+          <AgentActivityWidget maxHeight='280px' maxEvents={4} />
 
-          {/* Quarantine */}
+          {/* Execution Inbox - Replaces old Due Actions */}
+          <ExecutionInbox
+            actions={dueActions as any}
+            quarantineItems={quarantineItems as any}
+            onRefresh={fetchData}
+            isLoading={loading}
+            maxHeight='400px'
+          />
+
+          {/* Quarantine Health */}
           <Card>
             <CardHeader className='pb-3'>
               <div className='flex items-center justify-between'>
@@ -357,40 +390,22 @@ export default function DashboardPage() {
                     <span className='text-sm text-muted-foreground'>Pending</span>
                     <span className='font-medium'>{quarantineHealth?.pending_items || 0}</span>
                   </div>
-                  {quarantineItems.length > 0 && (
-                    <div className='pt-2 border-t'>
-                      <p className='text-xs text-muted-foreground mb-2'>Recent items:</p>
-                      {quarantineItems.slice(0, 2).map((item, i) => (
-                        <div key={item.id || item.quarantine_id || i} className='text-xs truncate'>
-                          {item.email_subject || item.subject || 'Unknown'}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
             </CardContent>
           </Card>
 
           {/* Alerts */}
-          <Card>
-            <CardHeader className='pb-3'>
-              <CardTitle className='flex items-center gap-2 text-base'>
-                <IconAlertTriangle className='h-5 w-5' />
-                Alerts
-                {alerts.length > 0 && (
+          {alerts.length > 0 && (
+            <Card>
+              <CardHeader className='pb-3'>
+                <CardTitle className='flex items-center gap-2 text-base'>
+                  <IconAlertTriangle className='h-5 w-5' />
+                  Alerts
                   <Badge variant='destructive'>{alerts.length}</Badge>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className='h-16 w-full' />
-              ) : alerts.length === 0 ? (
-                <div className='text-center py-4 text-muted-foreground'>
-                  <p className='text-sm'>No active alerts</p>
-                </div>
-              ) : (
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
                 <ScrollArea className='h-[150px]'>
                   <div className='space-y-2'>
                     {alerts.slice(0, 5).map((alert, i) => (
@@ -410,9 +425,9 @@ export default function DashboardPage() {
                     ))}
                   </div>
                 </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

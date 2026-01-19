@@ -24,7 +24,7 @@ import { FormFileUpload, type FileUploadConfig } from './form-file-upload';
 const demoFormSchema = z.object({
   // Basic inputs
   name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.email('Invalid email address'),
+  email: z.string().email('Invalid email address'),
   age: z.number().min(18, 'Must be at least 18 years old'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
 

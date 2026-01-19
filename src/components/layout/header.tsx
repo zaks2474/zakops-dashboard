@@ -2,9 +2,11 @@ import React from 'react';
 import { SidebarTrigger } from '../ui/sidebar';
 import { Separator } from '../ui/separator';
 import { Breadcrumbs } from '../breadcrumbs';
-import SearchInput from '../search-input';
+import { GlobalSearch } from '../global-search';
 import { UserNav } from './user-nav';
 import { ModeToggle } from './ThemeToggle/theme-toggle';
+import { ApprovalBadge } from '../approvals/ApprovalBadge';
+import { AgentStatusIndicator } from './AgentStatusIndicator';
 
 export default function Header() {
   return (
@@ -17,8 +19,10 @@ export default function Header() {
 
       <div className='flex items-center gap-2 px-4'>
         <div className='hidden md:flex'>
-          <SearchInput />
+          <GlobalSearch />
         </div>
+        <AgentStatusIndicator variant="icon" />
+        <ApprovalBadge />
         <UserNav />
         <ModeToggle />
       </div>

@@ -2,8 +2,16 @@
 // 🛑 Nothing in here has anything to do with Nextjs, it's just a fake database
 ////////////////////////////////////////////////////////////////////////////////
 
-import { faker } from '@faker-js/faker';
-import { matchSorter } from 'match-sorter'; // For filtering
+const DEFAULT_CATEGORIES = [
+  'Electronics',
+  'Furniture',
+  'Clothing',
+  'Toys',
+  'Groceries',
+  'Books',
+  'Jewelry',
+  'Beauty Products'
+];
 
 export const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,28 +36,18 @@ export const fakeProducts = {
   initialize() {
     const sampleProducts: Product[] = [];
     function generateRandomProductData(id: number): Product {
-      const categories = [
-        'Electronics',
-        'Furniture',
-        'Clothing',
-        'Toys',
-        'Groceries',
-        'Books',
-        'Jewelry',
-        'Beauty Products'
-      ];
-
+      const category = DEFAULT_CATEGORIES[(id - 1) % DEFAULT_CATEGORIES.length];
+      const created = new Date(Date.UTC(2023, 0, id, 12, 0, 0)).toISOString();
+      const updated = new Date(Date.UTC(2024, 0, id, 12, 0, 0)).toISOString();
       return {
         id,
-        name: faker.commerce.productName(),
-        description: faker.commerce.productDescription(),
-        created_at: faker.date
-          .between({ from: '2022-01-01', to: '2023-12-31' })
-          .toISOString(),
-        price: parseFloat(faker.commerce.price({ min: 5, max: 500, dec: 2 })),
+        name: `Sample Product ${id}`,
+        description: `Demo product description for item ${id}.`,
+        created_at: created,
+        price: 10 + id * 2.5,
         photo_url: `https://api.slingacademy.com/public/sample-products/${id}.png`,
-        category: faker.helpers.arrayElement(categories),
-        updated_at: faker.date.recent().toISOString()
+        category,
+        updated_at: updated
       };
     }
 
@@ -80,8 +78,10 @@ export const fakeProducts = {
 
     // Search functionality across multiple fields
     if (search) {
-      products = matchSorter(products, search, {
-        keys: ['name', 'description', 'category']
+      const q = search.toLowerCase();
+      products = products.filter((p) => {
+        const haystack = `${p.name} ${p.description} ${p.category}`.toLowerCase();
+        return haystack.includes(q);
       });
     }
 

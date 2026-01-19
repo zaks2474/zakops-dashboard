@@ -5,8 +5,19 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -30,9 +41,11 @@ import {
   IconSearch,
   IconSortAscending,
   IconSortDescending,
+  IconTrash,
   IconX
 } from '@tabler/icons-react';
-import { getDeals, type Deal } from '@/lib/api';
+import { toast } from 'sonner';
+import { archiveDeal, bulkArchiveDeals, getDeals, type Deal } from '@/lib/api';
 
 const STAGES = [
   'inbound',
@@ -63,6 +76,11 @@ export default function DealsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [selectedDealIds, setSelectedDealIds] = useState<Set<string>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
+
   // Filters from URL (convert empty to sentinel for Select component)
   const stageFilterRaw = searchParams.get('stage') || '';
   const statusFilterRaw = searchParams.get('status') || 'active';
@@ -85,6 +103,7 @@ export default function DealsPage() {
       if (statusFilterRaw) params.status = statusFilterRaw;
       const data = await getDeals(params);
       setDeals(data);
+      setSelectedDealIds(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load deals');
     } finally {
@@ -176,9 +195,57 @@ export default function DealsPage() {
     );
   };
 
+  const openDeleteDialog = (dealIds: string[]) => {
+    setDeleteTargetIds(dealIds);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (deleteTargetIds.length === 0) {
+      setDeleteDialogOpen(false);
+      return;
+    }
+    setDeleting(true);
+    try {
+      let operator = 'operator';
+      try {
+        const saved = window.localStorage.getItem('zakops_operator_name');
+        if (saved && saved.trim()) operator = saved.trim();
+      } catch {
+        // ignore
+      }
+
+      if (deleteTargetIds.length === 1) {
+        await archiveDeal(deleteTargetIds[0], { operator });
+      } else {
+        await bulkArchiveDeals(deleteTargetIds, { operator });
+      }
+
+      setDeals(prev => prev.filter(d => !deleteTargetIds.includes(d.deal_id)));
+      setSelectedDealIds(prev => {
+        const next = new Set(prev);
+        for (const id of deleteTargetIds) next.delete(id);
+        return next;
+      });
+
+      toast.success(
+        deleteTargetIds.length === 1
+          ? 'Deal deleted (archived)'
+          : `Deleted (archived) ${deleteTargetIds.length} deals`
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed');
+      fetchData();
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+      setDeleteTargetIds([]);
+    }
+  };
+
   if (error) {
     return (
-      <div className='flex flex-1 flex-col items-center justify-center gap-4 p-8'>
+      <div className='flex flex-1 flex-col min-h-0 items-center justify-center gap-4 p-8'>
         <IconAlertTriangle className='h-12 w-12 text-destructive' />
         <h2 className='text-xl font-semibold'>Failed to load deals</h2>
         <p className='text-muted-foreground'>{error}</p>
@@ -191,9 +258,9 @@ export default function DealsPage() {
   }
 
   return (
-    <div className='flex flex-1 flex-col gap-4 p-4 md:p-6'>
-      {/* Header */}
-      <div className='flex items-center justify-between'>
+    <div className='flex flex-1 flex-col min-h-0 gap-4 p-4 md:p-6'>
+      {/* Header - fixed */}
+      <div className='flex items-center justify-between shrink-0'>
         <div>
           <h1 className='text-2xl font-bold tracking-tight'>Deals</h1>
           <p className='text-muted-foreground'>
@@ -206,8 +273,8 @@ export default function DealsPage() {
         </Button>
       </div>
 
-      {/* Filters */}
-      <Card>
+      {/* Filters - fixed */}
+      <Card className='shrink-0'>
         <CardContent className='pt-6'>
           <div className='flex flex-wrap gap-4'>
             {/* Search */}
@@ -279,15 +346,38 @@ export default function DealsPage() {
         </CardContent>
       </Card>
 
-      {/* Deals Table */}
-      <Card>
-        <CardHeader className='pb-3'>
-          <CardTitle className='flex items-center gap-2'>
-            <IconBox className='h-5 w-5' />
-            {sortedDeals.length} Deal{sortedDeals.length !== 1 ? 's' : ''}
-          </CardTitle>
+      {/* Deals Table - scrollable */}
+      <Card className='flex-1 min-h-0 flex flex-col overflow-hidden'>
+        <CardHeader className='pb-3 shrink-0'>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <CardTitle className='flex items-center gap-2'>
+              <IconBox className='h-5 w-5' />
+              {sortedDeals.length} Deal{sortedDeals.length !== 1 ? 's' : ''}
+            </CardTitle>
+            {selectedDealIds.size > 0 && (
+              <div className='flex items-center gap-2'>
+                <Button
+                  variant='destructive'
+                  size='sm'
+                  onClick={() => openDeleteDialog(Array.from(selectedDealIds))}
+                  disabled={loading || deleting}
+                >
+                  <IconTrash className='mr-2 h-4 w-4' />
+                  Delete ({selectedDealIds.size})
+                </Button>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => setSelectedDealIds(new Set())}
+                  disabled={loading || deleting}
+                >
+                  Clear
+                </Button>
+              </div>
+            )}
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className='flex-1 min-h-0 overflow-y-auto' data-testid='deals-scroll'>
           {loading ? (
             <div className='space-y-2'>
               {[...Array(10)].map((_, i) => (
@@ -305,6 +395,36 @@ export default function DealsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className='w-[36px]'>
+                      {(() => {
+                        const selectedVisible = sortedDeals.filter(d => selectedDealIds.has(d.deal_id)).length;
+                        const allVisibleSelected = sortedDeals.length > 0 && selectedVisible === sortedDeals.length;
+                        const someVisibleSelected = selectedVisible > 0 && selectedVisible < sortedDeals.length;
+                        const checked: boolean | 'indeterminate' = allVisibleSelected
+                          ? true
+                          : someVisibleSelected
+                          ? 'indeterminate'
+                          : false;
+
+                        return (
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() => {
+                              setSelectedDealIds(prev => {
+                                const next = new Set(prev);
+                                if (allVisibleSelected) {
+                                  for (const d of sortedDeals) next.delete(d.deal_id);
+                                } else {
+                                  for (const d of sortedDeals) next.add(d.deal_id);
+                                }
+                                return next;
+                              });
+                            }}
+                            aria-label='Select all visible deals'
+                          />
+                        );
+                      })()}
+                    </TableHead>
                     <TableHead
                       className='cursor-pointer hover:bg-accent'
                       onClick={() => toggleSort('canonical_name')}
@@ -350,6 +470,7 @@ export default function DealsPage() {
                         <SortIcon field='days_since_update' />
                       </div>
                     </TableHead>
+                    <TableHead className='w-[60px]' />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -359,6 +480,23 @@ export default function DealsPage() {
                       className='cursor-pointer hover:bg-accent'
                       onClick={() => router.push(`/deals/${deal.deal_id}`)}
                     >
+                      <TableCell
+                        onClick={(e) => e.stopPropagation()}
+                        className='w-[36px]'
+                      >
+                        <Checkbox
+                          checked={selectedDealIds.has(deal.deal_id)}
+                          onCheckedChange={() => {
+                            setSelectedDealIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(deal.deal_id)) next.delete(deal.deal_id);
+                              else next.add(deal.deal_id);
+                              return next;
+                            });
+                          }}
+                          aria-label={`Select deal ${deal.deal_id}`}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div>
                           <p className='font-medium'>
@@ -397,6 +535,20 @@ export default function DealsPage() {
                           ? `${deal.days_since_update}d ago`
                           : '-'}
                       </TableCell>
+                      <TableCell
+                        onClick={(e) => e.stopPropagation()}
+                        className='text-right'
+                      >
+                        <Button
+                          variant='ghost'
+                          size='icon'
+                          onClick={() => openDeleteDialog([deal.deal_id])}
+                          aria-label={`Delete deal ${deal.deal_id}`}
+                          disabled={deleting}
+                        >
+                          <IconTrash className='h-4 w-4' />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -405,6 +557,32 @@ export default function DealsPage() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteTargetIds.length === 1 ? 'Delete deal?' : `Delete ${deleteTargetIds.length} deals?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This hides the deal from the Deals list (soft delete / archive). It does not delete files, events, or audit history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: 'destructive' })}
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
