@@ -301,6 +301,30 @@ export interface PipelineStats {
 }
 
 // =============================================================================
+// STAGE TRANSITION TYPES
+// =============================================================================
+
+export interface StageTransitionRequest {
+  new_stage: DealStage;
+  reason?: string;
+  idempotency_key?: string;
+}
+
+export interface StageTransitionResponse {
+  deal_id: string;
+  from_stage: DealStage;
+  to_stage: DealStage;
+  success: boolean;
+  idempotent_hit: boolean;
+}
+
+export interface StageSummary {
+  stage: DealStage;
+  count: number;
+  deals: Deal[];
+}
+
+// =============================================================================
 // API REQUEST/RESPONSE TYPES
 // =============================================================================
 

@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +33,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   IconAlertTriangle,
   IconBox,
@@ -42,10 +42,13 @@ import {
   IconSortAscending,
   IconSortDescending,
   IconTrash,
-  IconX
+  IconX,
+  IconLayoutKanban,
+  IconTable,
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { archiveDeal, bulkArchiveDeals, getDeals, type Deal } from '@/lib/api';
+import { DealBoard } from '@/components/deals/DealBoard';
 
 const STAGES = [
   'inbound',
@@ -67,6 +70,7 @@ const ALL_FILTER = '__all__';
 
 type SortField = 'canonical_name' | 'stage' | 'broker' | 'days_since_update' | 'priority';
 type SortOrder = 'asc' | 'desc';
+type ViewMode = 'table' | 'board';
 
 export default function DealsPage() {
   const router = useRouter();
@@ -80,6 +84,10 @@ export default function DealsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTargetIds, setDeleteTargetIds] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
+
+  // View mode from URL
+  const initialView = (searchParams.get('view') as ViewMode) || 'table';
+  const [viewMode, setViewMode] = useState<ViewMode>(initialView);
 
   // Filters from URL (convert empty to sentinel for Select component)
   const stageFilterRaw = searchParams.get('stage') || '';
@@ -123,6 +131,18 @@ export default function DealsPage() {
       params.set(key, actualValue);
     } else {
       params.delete(key);
+    }
+    router.push(`/deals?${params.toString()}`);
+  };
+
+  // Update view mode
+  const updateViewMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    const params = new URLSearchParams(searchParams.toString());
+    if (mode === 'table') {
+      params.delete('view');
+    } else {
+      params.set('view', mode);
     }
     router.push(`/deals?${params.toString()}`);
   };
@@ -267,86 +287,111 @@ export default function DealsPage() {
             Manage your deal pipeline
           </p>
         </div>
-        <Button onClick={fetchData} variant='outline' size='sm' disabled={loading}>
-          <IconRefresh className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className='flex items-center gap-2'>
+          {/* View Toggle */}
+          <Tabs value={viewMode} onValueChange={(v) => updateViewMode(v as ViewMode)}>
+            <TabsList className='h-9'>
+              <TabsTrigger value='table' className='gap-1.5 px-3'>
+                <IconTable className='h-4 w-4' />
+                Table
+              </TabsTrigger>
+              <TabsTrigger value='board' className='gap-1.5 px-3'>
+                <IconLayoutKanban className='h-4 w-4' />
+                Board
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <Button onClick={fetchData} variant='outline' size='sm' disabled={loading}>
+            <IconRefresh className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
-      {/* Filters - fixed */}
-      <Card className='shrink-0'>
-        <CardContent className='pt-6'>
-          <div className='flex flex-wrap gap-4'>
-            {/* Search */}
-            <div className='flex-1 min-w-[200px]'>
-              <div className='relative'>
-                <IconSearch className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
-                <Input
-                  placeholder='Search deals...'
-                  value={searchQuery}
-                  onChange={(e) => updateFilter('q', e.target.value)}
-                  className='pl-9'
-                />
-                {searchQuery && (
+      {/* Board View */}
+      {viewMode === 'board' && (
+        <div className='flex-1 min-h-0'>
+          <DealBoard />
+        </div>
+      )}
+
+      {/* Table View */}
+      {viewMode === 'table' && (
+        <>
+          {/* Filters - fixed */}
+          <Card className='shrink-0'>
+            <CardContent className='pt-6'>
+              <div className='flex flex-wrap gap-4'>
+                {/* Search */}
+                <div className='flex-1 min-w-[200px]'>
+                  <div className='relative'>
+                    <IconSearch className='absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground' />
+                    <Input
+                      placeholder='Search deals...'
+                      value={searchQuery}
+                      onChange={(e) => updateFilter('q', e.target.value)}
+                      className='pl-9'
+                    />
+                    {searchQuery && (
+                      <Button
+                        variant='ghost'
+                        size='sm'
+                        className='absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0'
+                        onClick={() => updateFilter('q', '')}
+                      >
+                        <IconX className='h-4 w-4' />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Stage filter */}
+                <Select value={stageFilter} onValueChange={(v) => updateFilter('stage', v)}>
+                  <SelectTrigger className='w-[180px]'>
+                    <SelectValue placeholder='All stages' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_FILTER}>All stages</SelectItem>
+                    {STAGES.map((stage) => (
+                      <SelectItem key={stage} value={stage}>
+                        {stage}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Status filter */}
+                <Select value={statusFilter} onValueChange={(v) => updateFilter('status', v)}>
+                  <SelectTrigger className='w-[150px]'>
+                    <SelectValue placeholder='Status' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_FILTER}>All statuses</SelectItem>
+                    {STATUSES.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Clear filters */}
+                {(stageFilter !== ALL_FILTER || statusFilter !== 'active' || searchQuery) && (
                   <Button
                     variant='ghost'
                     size='sm'
-                    className='absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 p-0'
-                    onClick={() => updateFilter('q', '')}
+                    onClick={() => {
+                      router.push('/deals?status=active');
+                    }}
                   >
-                    <IconX className='h-4 w-4' />
+                    Clear filters
                   </Button>
                 )}
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Stage filter */}
-            <Select value={stageFilter} onValueChange={(v) => updateFilter('stage', v)}>
-              <SelectTrigger className='w-[180px]'>
-                <SelectValue placeholder='All stages' />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_FILTER}>All stages</SelectItem>
-                {STAGES.map((stage) => (
-                  <SelectItem key={stage} value={stage}>
-                    {stage}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Status filter */}
-            <Select value={statusFilter} onValueChange={(v) => updateFilter('status', v)}>
-              <SelectTrigger className='w-[150px]'>
-                <SelectValue placeholder='Status' />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_FILTER}>All statuses</SelectItem>
-                {STATUSES.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {status}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Clear filters */}
-            {(stageFilter !== ALL_FILTER || statusFilter !== 'active' || searchQuery) && (
-              <Button
-                variant='ghost'
-                size='sm'
-                onClick={() => {
-                  router.push('/deals?status=active');
-                }}
-              >
-                Clear filters
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Deals Table - scrollable */}
+          {/* Deals Table - scrollable */}
       <Card className='flex-1 min-h-0 flex flex-col overflow-hidden'>
         <CardHeader className='pb-3 shrink-0'>
           <div className='flex flex-wrap items-center justify-between gap-3'>
@@ -557,6 +602,8 @@ export default function DealsPage() {
           )}
         </CardContent>
       </Card>
+        </>
+      )}
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>

@@ -31,6 +31,9 @@ import type {
   PipelineStageSummary,
   PipelineStats,
   HealthResponse,
+  StageTransitionRequest,
+  StageTransitionResponse,
+  StageSummary,
 } from '@/types/api';
 
 // =============================================================================
@@ -212,6 +215,39 @@ export function useUpdateDeal(
       queryClient.invalidateQueries({ queryKey: queryKeys.pipeline.summary });
       queryClient.invalidateQueries({ queryKey: queryKeys.pipeline.stats });
     },
+    ...options,
+  });
+}
+
+export function useTransitionDeal(
+  options?: UseMutationOptions<StageTransitionResponse, Error, { dealId: string; data: StageTransitionRequest; idempotencyKey?: string }>
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ dealId, data, idempotencyKey }: { dealId: string; data: StageTransitionRequest; idempotencyKey?: string }) =>
+      apiFetch<StageTransitionResponse>(`/api/deals/${dealId}/transition`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+        headers: idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : {},
+      }),
+    onSuccess: (_, { dealId }) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.deals.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.deals.detail(dealId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipeline.summary });
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipeline.stats });
+      queryClient.invalidateQueries({ queryKey: ['deals', 'byStage'] });
+    },
+    ...options,
+  });
+}
+
+export function useDealsByStage(
+  options?: Omit<UseQueryOptions<StageSummary[]>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: ['deals', 'byStage'],
+    queryFn: () => apiFetch<StageSummary[]>('/api/deals/stages/summary'),
+    staleTime: 30000,
     ...options,
   });
 }
