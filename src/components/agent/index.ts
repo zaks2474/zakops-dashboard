@@ -9,6 +9,10 @@ export { AgentPanel, default as AgentPanelDefault } from './AgentPanel';
 
 // Timeline components
 export { AgentRunTimeline } from './AgentRunTimeline';
+export { ActivityTimeline, ActivityTimelineSkeleton, type ActivityItem } from './ActivityTimeline';
+
+// Ask Agent component (Phase 16.6)
+export { AskAgent, InlineAskAgent } from './AskAgent';
 
 // Card components
 export { ToolCallCard } from './ToolCallCard';

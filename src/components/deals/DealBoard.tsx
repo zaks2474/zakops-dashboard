@@ -3,6 +3,7 @@
 /**
  * DealBoard - Kanban-style deal board with drag and drop
  * Phase 19: Dashboard Foundation
+ * Phase 20: Real-time UX Polish (skeleton loading, optimistic indicators, toast)
  */
 
 import { useState, useMemo } from 'react';
@@ -13,13 +14,19 @@ import {
   DropResult,
 } from '@hello-pangea/dnd';
 import { formatDistanceToNow } from 'date-fns';
-import { Building2, Calendar, Loader2, AlertCircle, GripVertical } from 'lucide-react';
+import { Building2, Calendar, AlertCircle, GripVertical, Loader2 } from 'lucide-react';
 import { useDeals, useTransitionDeal } from '@/lib/api-client';
 import type { Deal, DealStage } from '@/types/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { SkeletonDealBoard } from '@/components/shared/Skeleton';
+import { ErrorState } from '@/components/shared/LoadingWrapper';
+import { toast } from '@/components/notifications/Toast';
+
+// Extended Deal type with optimistic flag
+type OptimisticDeal = Deal & { _optimistic?: boolean };
 
 // Pipeline stages for the Kanban board
 const PIPELINE_STAGES: { id: DealStage; label: string; color: string }[] = [
@@ -32,11 +39,13 @@ const PIPELINE_STAGES: { id: DealStage; label: string; color: string }[] = [
 ];
 
 interface DealCardProps {
-  deal: Deal;
+  deal: OptimisticDeal;
   index: number;
 }
 
 function DealCard({ deal, index }: DealCardProps) {
+  const isOptimistic = deal._optimistic;
+
   return (
     <Draggable draggableId={deal.deal_id} index={index}>
       {(provided, snapshot) => (
@@ -44,10 +53,19 @@ function DealCard({ deal, index }: DealCardProps) {
           ref={provided.innerRef}
           {...provided.draggableProps}
           className={cn(
-            'mb-2 rounded-lg border bg-card p-3 shadow-sm transition-shadow',
-            snapshot.isDragging && 'shadow-lg ring-2 ring-primary'
+            'mb-2 rounded-lg border bg-card p-3 shadow-sm transition-all',
+            snapshot.isDragging && 'shadow-lg ring-2 ring-primary',
+            isOptimistic && 'border-blue-300 bg-blue-50/50 dark:bg-blue-950/30'
           )}
         >
+          {/* Optimistic update indicator */}
+          {isOptimistic && (
+            <div className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 mb-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>Saving...</span>
+            </div>
+          )}
+
           <div className="flex items-start gap-2">
             <div
               {...provided.dragHandleProps}
@@ -95,7 +113,7 @@ function DealCard({ deal, index }: DealCardProps) {
 
 interface StageColumnProps {
   stage: { id: DealStage; label: string; color: string };
-  deals: Deal[];
+  deals: OptimisticDeal[];
 }
 
 function StageColumn({ stage, deals }: StageColumnProps) {
@@ -131,14 +149,14 @@ function StageColumn({ stage, deals }: StageColumnProps) {
 }
 
 export function DealBoard() {
-  const { data: deals, isLoading, error } = useDeals({ status: 'active' });
+  const { data: deals, isLoading, error, refetch } = useDeals({ status: 'active' });
   const transitionMutation = useTransitionDeal();
-  const [optimisticDeals, setOptimisticDeals] = useState<Deal[]>([]);
+  const [optimisticDeals, setOptimisticDeals] = useState<OptimisticDeal[]>([]);
 
   // Group deals by stage
   const dealsByStage = useMemo(() => {
-    const currentDeals = optimisticDeals.length > 0 ? optimisticDeals : deals || [];
-    const grouped: Record<DealStage, Deal[]> = {
+    const currentDeals = optimisticDeals.length > 0 ? optimisticDeals : (deals || []) as OptimisticDeal[];
+    const grouped: Record<DealStage, OptimisticDeal[]> = {
       inbound: [],
       screening: [],
       qualified: [],
@@ -172,9 +190,13 @@ export function DealBoard() {
 
     if (!deal) return;
 
-    // Optimistic update
-    const updatedDeals = (deals || []).map((d) =>
-      d.deal_id === draggableId ? { ...d, stage: newStage } : d
+    const oldStage = deal.stage;
+
+    // Optimistic update with flag
+    const updatedDeals: OptimisticDeal[] = (deals || []).map((d) =>
+      d.deal_id === draggableId
+        ? { ...d, stage: newStage, _optimistic: true }
+        : d
     );
     setOptimisticDeals(updatedDeals);
 
@@ -186,36 +208,64 @@ export function DealBoard() {
         dealId: draggableId,
         data: {
           new_stage: newStage,
-          reason: `Moved from ${deal.stage} to ${newStage} via board`,
+          reason: `Moved from ${oldStage} to ${newStage} via board`,
         },
         idempotencyKey,
       });
-    } catch (error) {
-      console.error('Failed to transition deal:', error);
+
+      // Show success toast
+      toast.success({
+        title: 'Deal moved',
+        description: `${deal.display_name || deal.canonical_name} moved to ${newStage}`,
+      });
+    } catch (err) {
+      console.error('Failed to transition deal:', err);
       // Revert optimistic update
       setOptimisticDeals([]);
+
+      // Show error toast
+      toast.error({
+        title: 'Failed to move deal',
+        description: err instanceof Error ? err.message : 'An error occurred',
+        action: {
+          label: 'Retry',
+          onClick: () => handleDragEnd(result),
+        },
+      });
     } finally {
       // Clear optimistic state after mutation completes
       setOptimisticDeals([]);
     }
   };
 
+  // Loading state with skeleton
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle>Deal Pipeline</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SkeletonDealBoard />
+        </CardContent>
+      </Card>
     );
   }
 
+  // Error state with retry
   if (error) {
     return (
-      <Card className="border-destructive">
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-2 text-destructive">
-            <AlertCircle className="h-5 w-5" />
-            <span>Failed to load deals: {error.message}</span>
-          </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle>Deal Pipeline</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ErrorState
+            error={error}
+            onRetry={() => refetch()}
+            title="Failed to load deals"
+            description="We couldn't load your deal pipeline. Please try again."
+          />
         </CardContent>
       </Card>
     );

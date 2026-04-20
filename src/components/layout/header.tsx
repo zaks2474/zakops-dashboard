@@ -7,6 +7,7 @@ import { UserNav } from './user-nav';
 import { ModeToggle } from './ThemeToggle/theme-toggle';
 import { ApprovalBadge } from '../approvals/ApprovalBadge';
 import { AgentStatusIndicator } from './AgentStatusIndicator';
+import { HeaderSSEStatus } from './HeaderSSEStatus';
 
 export default function Header() {
   return (
@@ -21,6 +22,7 @@ export default function Header() {
         <div className='hidden md:flex'>
           <GlobalSearch />
         </div>
+        <HeaderSSEStatus />
         <AgentStatusIndicator variant="icon" />
         <ApprovalBadge />
         <UserNav />
